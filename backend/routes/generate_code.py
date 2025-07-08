@@ -1,9 +1,10 @@
+# /root/screenshot-to-code/backend/routes/generate_code.py
 import asyncio
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 import traceback
 from typing import Callable, Awaitable
-from fastapi import APIRouter, WebSocket
+from fastapi import APIRouter, WebSocket, HTTPException
 import openai
 from codegen.utils import extract_html_content
 from config import (
@@ -55,6 +56,7 @@ MessageType = Literal[
     "variantComplete",
     "variantError",
     "variantCount",
+    "credits",
 ]
 from image_generation.core import generate_images
 from prompts import create_prompt
@@ -64,9 +66,83 @@ from prompts.types import Stack, PromptContent
 # from utils import pprint_prompt
 from ws.constants import APP_ERROR_WEB_SOCKET_CODE  # type: ignore
 
+# Add Supabase client for credit system
+from supabase import create_client, Client
+import os
+from datetime import datetime
+import stripe
+
+# Initialize Supabase client
+supabase_url = os.environ.get("SUPABASE_URL")
+supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
+supabase: Client = create_client(supabase_url, supabase_key) if supabase_url and supabase_key else None
 
 router = APIRouter()
 
+# Add a function to check and use credits
+def check_and_use_credit(user_id: str, model: str, stack: str, input_mode: str) -> tuple[bool, str, int]:
+    """
+    Check if the user has credits and use one if they do
+    Returns (success, message, remaining_credits)
+    """
+    if not supabase:
+        # If Supabase is not configured, don't check credits (for development)
+        print("Supabase not configured, skipping credit check")
+        return True, "Development mode", 999
+    
+    if not user_id:
+        return False, "User ID not provided", 0
+    
+    try:
+        # Get user credits - Note: Supabase Python client is synchronous
+        credits_response = supabase.table("user_credits").select("*").eq("user_id", user_id).single().execute()
+        
+        if not credits_response.data:
+            # User has no credit record, create one with 0 credits
+            print(f"No credit record found for user {user_id}")
+            return False, "No credits found. Please sign up to get free credits.", 0
+        
+        credits = credits_response.data
+        
+        # Check if user has credits
+        if credits["credits_remaining"] <= 0:
+            return False, "Insufficient credits", 0
+        
+        # Update credits
+        new_remaining = credits["credits_remaining"] - 1
+        new_used = credits["credits_used"] + 1
+        
+        update_response = supabase.table("user_credits").update({
+            "credits_remaining": new_remaining,
+            "credits_used": new_used,
+            "last_used_date": datetime.now().isoformat()
+        }).eq("user_id", user_id).execute()
+        
+        if not update_response.data:
+            print(f"Error updating credits")
+            return False, "Failed to update credits", credits["credits_remaining"]
+        
+        # Log the conversion
+        try:
+            log_response = supabase.table("conversion_history").insert({
+                "user_id": user_id,
+                "model_used": model,
+                "framework": stack,
+                "input_type": input_mode,
+                "created_at": datetime.now().isoformat()
+            }).execute()
+            
+            if not log_response.data:
+                # Log error but don't fail the request
+                print(f"Error logging conversion")
+        except Exception as e:
+            print(f"Error logging conversion: {str(e)}")
+        
+        return True, "Credit used successfully", new_remaining
+    
+    except Exception as e:
+        print(f"Error checking credits: {str(e)}")
+        return False, f"Error checking credits: {str(e)}", 0
 
 class VariantErrorAlreadySent(Exception):
     """Exception that indicates a variantError message has already been sent to frontend"""
@@ -179,6 +255,8 @@ class WebSocketCommunicator:
             print(f"Variant {variantIndex + 1} complete")
         elif type == "variantError":
             print(f"Variant {variantIndex + 1} error: {value}")
+        elif type == "credits":
+            print(f"Credits update: {value}")
 
         await self.websocket.send_json(
             {"type": type, "value": value, "variantIndex": variantIndex}
@@ -217,6 +295,7 @@ class ExtractedParams:
     prompt: PromptContent
     history: List[Dict[str, Any]]
     is_imported_from_code: bool
+    user_id: str | None # Added user_id
 
 
 class ParameterExtractionStage:
@@ -281,6 +360,9 @@ class ParameterExtractionStage:
         # Extract imported code flag
         is_imported_from_code = params.get("isImportedFromCode", False)
 
+        # Extract user_id
+        user_id = params.get("userId")
+
         return ExtractedParams(
             stack=validated_stack,
             input_mode=validated_input_mode,
@@ -292,6 +374,7 @@ class ParameterExtractionStage:
             prompt=prompt,
             history=history,
             is_imported_from_code=is_imported_from_code,
+            user_id=user_id,
         )
 
     def _get_from_settings_dialog_or_env(
@@ -819,6 +902,61 @@ class ParameterExtractionMiddleware(Middleware):
         await next_func()
 
 
+class CreditCheckMiddleware(Middleware):
+    """Handles credit checking and usage"""
+
+    async def process(
+        self, context: PipelineContext, next_func: Callable[[], Awaitable[None]]
+    ) -> None:
+        assert context.extracted_params is not None
+        assert context.ws_comm is not None
+
+        user_id = context.extracted_params.user_id
+        stack = context.extracted_params.stack
+        input_mode = context.extracted_params.input_mode
+        generation_type = context.extracted_params.generation_type
+
+        if IS_PROD or supabase:
+            if not user_id:
+                await context.throw_error("Authentication required. Please sign in to use the service.")
+                return
+            
+            print(f"Checking credits for user {user_id}")
+            
+            # Determine which model to use for credit logging
+            model_name = ""
+            if context.extracted_params.anthropic_api_key:
+                if generation_type == "create":
+                    model_name = "Claude 3.7 Sonnet"
+                else:
+                    model_name = "Claude 3.5 Sonnet"
+            elif context.extracted_params.openai_api_key:
+                model_name = "GPT-4 Vision"
+            else:
+                model_name = "Unknown"
+            
+            # Check and use a credit (synchronous call)
+            credit_success, credit_message, remaining_credits = check_and_use_credit(
+                user_id, 
+                model_name, 
+                stack, 
+                input_mode
+            )
+            
+            if not credit_success:
+                await context.throw_error(f"Credit check failed: {credit_message}. Please purchase more credits.")
+                return
+            
+            # Send credit update to client
+            await context.send_message("credits", str(remaining_credits), 0)
+            await context.send_message("status", f"Credit used. {remaining_credits} credits remaining.", 0)
+        else:
+            # For development without credit system
+            print("Skipping credit check in development mode.")
+
+        await next_func()
+
+
 class StatusBroadcastMiddleware(Middleware):
     """Sends initial status messages to all variants"""
 
@@ -950,6 +1088,7 @@ async def stream_code(websocket: WebSocket):
     # Configure the pipeline
     pipeline.use(WebSocketSetupMiddleware())
     pipeline.use(ParameterExtractionMiddleware())
+    pipeline.use(CreditCheckMiddleware()) # Added CreditCheckMiddleware
     pipeline.use(StatusBroadcastMiddleware())
     pipeline.use(PromptCreationMiddleware())
     pipeline.use(CodeGenerationMiddleware())

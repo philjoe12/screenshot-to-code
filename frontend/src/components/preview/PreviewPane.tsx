@@ -6,7 +6,7 @@ import {
   FaMobile,
   FaCode,
 } from "react-icons/fa";
-import { AppState, Settings } from "../../types";
+import { AppState, Settings } from "../../types/types";
 import CodeTab from "./CodeTab";
 import { Button } from "../ui/button";
 import { useAppStore } from "../../store/app-store";

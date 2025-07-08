@@ -3,7 +3,7 @@ import { useDropzone } from "react-dropzone";
 import { toast } from "react-hot-toast";
 import { URLS } from "../urls";
 import ScreenRecorder from "./recording/ScreenRecorder";
-import { ScreenRecorderState } from "../types";
+import { ScreenRecorderState } from "../types/types";
 
 const baseStyle = {
   flex: 1,

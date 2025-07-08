@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "../ui/button";
-import { ScreenRecorderState } from "../../types";
+import { ScreenRecorderState } from "../../types/types";
 import { blobToBase64DataUrl } from "./utils";
 import fixWebmDuration from "webm-duration-fix";
 import toast from "react-hot-toast";

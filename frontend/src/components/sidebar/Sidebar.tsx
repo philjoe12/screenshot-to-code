@@ -1,7 +1,7 @@
 import classNames from "classnames";
 import { useAppStore } from "../../store/app-store";
 import { useProjectStore } from "../../store/project-store";
-import { AppState } from "../../types";
+import { AppState } from "../../types/types";
 import CodePreview from "../preview/CodePreview";
 import KeyboardShortcutBadge from "../core/KeyboardShortcutBadge";
 // import TipLink from "../messages/TipLink";

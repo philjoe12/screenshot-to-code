@@ -1,27 +1,119 @@
 version: '3.9'
 
 services:
+  # Backend service
   backend:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
-    
     env_file:
       - .env
-    
-    # or 
-    # environment:
-      #- BACKEND_PORT=7001   # if you change the port, make sure to also change the VITE_WS_BACKEND_URL at frontend/.env.local
-      # - OPENAI_API_KEY=your_openai_api_key
-    
+    environment:
+      - BACKEND_PORT=${BACKEND_PORT:-7001}
+      # Added environment variables for auth and payments
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - STRIPE_STARTER_PRICE_ID=${STRIPE_STARTER_PRICE_ID}
+      - STRIPE_PROFESSIONAL_PRICE_ID=${STRIPE_PROFESSIONAL_PRICE_ID}
+      - STRIPE_ENTERPRISE_PRICE_ID=${STRIPE_ENTERPRISE_PRICE_ID}
+      - FRONTEND_URL=${FRONTEND_URL:-https://pix2code.com}
+      - IS_PROD=${IS_PROD:-true}
+      # Original environment variables maintained
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - REPLICATE_API_KEY=${REPLICATE_API_KEY}
     ports:
-      - "${BACKEND_PORT:-7001}:${BACKEND_PORT:-7001}"
+      - "127.0.0.1:7001:7001"  # Bind to localhost only for security
+    command: uvicorn main:app --host 0.0.0.0 --port 7001
+    restart: unless-stopped
+    volumes:
+      - ./backend:/app
+      - backend_data:/app/data
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7001/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s  # Increased startup period
 
-    command: poetry run uvicorn main:app --host 0.0.0.0 --port ${BACKEND_PORT:-7001}
-  
+  # Frontend service (development mode)
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    environment:
+      - VITE_WS_BACKEND_URL=${VITE_WS_BACKEND_URL:-ws://backend:7001}
+      - VITE_HTTP_BACKEND_URL=${VITE_HTTP_BACKEND_URL:-http://backend:7001}
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+      - VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
+      - VITE_IS_RUNNING_ON_CLOUD=${VITE_IS_RUNNING_ON_CLOUD:-false}
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"  # Bind to localhost only for security
+    restart: unless-stopped
+    networks:
+      - app_network
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: yarn dev --host 0.0.0.0
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    
+  # Frontend build service (for production - builds and exits)
+  frontend_build:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_WS_BACKEND_URL=${VITE_WS_BACKEND_URL:-wss://pix2code.com/api/ws}
+        - VITE_HTTP_BACKEND_URL=${VITE_HTTP_BACKEND_URL:-https://pix2code.com/api}
+        - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+        - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+        - VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
+        - VITE_IS_RUNNING_ON_CLOUD=true
+    command: sh -c "yarn build && mkdir -p /dist && cp -r dist/* /dist/"
+    volumes:
+      - ./frontend:/app
+      - ./dist:/dist
+    networks:
+      - app_network
+    depends_on:
+      - backend
+    profiles:
+      - build
+    
+  # Optional: Database backup service
+  backup:
+    image: alpine:latest
+    volumes:
+      - backend_data:/data:ro
+      - ./backups:/backups
+    command: >
+      sh -c '
+        apk add --no-cache tar gzip &&
+        cd /data &&
+        tar -czf /backups/backup-$$(date +%Y%m%d-%H%M%S).tar.gz . &&
+        find /backups -type f -mtime +7 -delete'
+    networks:
+      - app_network
+    profiles:
+      - backup
+
+volumes:
+  backend_data:
+
+networks:
+  app_network:
+    driver: bridge

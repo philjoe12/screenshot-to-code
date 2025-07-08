@@ -11,7 +11,7 @@ import {
 } from "@codemirror/commands";
 import { bracketMatching } from "@codemirror/language";
 import { html } from "@codemirror/lang-html";
-import { EditorTheme } from "@/types";
+import { EditorTheme } from "@/types/types";
 
 interface Props {
   code: string;

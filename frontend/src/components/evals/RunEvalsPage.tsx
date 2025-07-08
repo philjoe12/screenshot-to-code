@@ -31,7 +31,7 @@ function RunEvalsPage() {
 
   useEffect(() => {
     return () => {
-      document.title = "Screenshot to Code";
+      document.title = "Pix 2 Code";
     };
   }, []);
 
@@ -64,7 +64,7 @@ function RunEvalsPage() {
       console.error("Error running evals:", error);
       document.title = "❌ Eval Error";
       setTimeout(() => {
-        document.title = "Screenshot to Code";
+        document.title = "Pix 2 Code";
       }, 5000);
     } finally {
       setIsRunning(false);

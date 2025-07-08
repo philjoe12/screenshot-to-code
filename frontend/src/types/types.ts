@@ -1,5 +1,5 @@
-import { Stack } from "./lib/stacks";
-import { CodeGenerationModel } from "./lib/models";
+import { Stack } from "../lib/stacks";
+import { CodeGenerationModel } from "../lib/models";
 
 export enum EditorTheme {
   ESPRESSO = "espresso",

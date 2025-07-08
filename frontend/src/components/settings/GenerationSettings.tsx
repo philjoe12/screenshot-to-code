@@ -1,6 +1,6 @@
 import React from "react";
 import { useAppStore } from "../../store/app-store";
-import { AppState, Settings } from "../../types";
+import { AppState, Settings } from "../../types/types";
 import OutputSettingsSection from "./OutputSettingsSection";
 import { Stack } from "../../lib/stacks";
 

@@ -9,7 +9,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { FaCog } from "react-icons/fa";
-import { EditorTheme, Settings } from "../../types";
+import { EditorTheme, Settings } from "../../types/types";
 import { Switch } from "../ui/switch";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";

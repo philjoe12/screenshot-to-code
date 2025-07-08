@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+// /frontend/src/App.tsx
+import React, { useEffect, useRef } from "react";
 import { generateCode } from "./generateCode";
 import SettingsDialog from "./components/settings/SettingsDialog";
-import { AppState, CodeGenerationParams, EditorTheme, Settings } from "./types";
+import { AppState, CodeGenerationParams, EditorTheme, Settings } from "./types/types";
 import { IS_RUNNING_ON_CLOUD } from "./config";
 import { PicoBadge } from "./components/messages/PicoBadge";
 import { OnboardingNote } from "./components/messages/OnboardingNote";
@@ -21,9 +22,15 @@ import PreviewPane from "./components/preview/PreviewPane";
 import DeprecationMessage from "./components/messages/DeprecationMessage";
 import { GenerationSettings } from "./components/settings/GenerationSettings";
 import StartPane from "./components/start-pane/StartPane";
+import { WebpageToVideoInput } from "./components/WebpageToVideoInput";
 import { Commit } from "./components/commits/types";
 import { createCommit } from "./components/commits/utils";
 import GenerateFromText from "./components/generate-from-text/GenerateFromText";
+
+// Import authentication components
+import { useAuth } from "./components/auth/AuthContext";
+import UserCreditsDisplay from "./components/UserCreditsDisplay";
+import { useNavigate } from "react-router-dom";
 
 function App() {
   const {
@@ -63,6 +70,10 @@ function App() {
     setAppState,
   } = useAppStore();
 
+  // Get user authentication state
+  const { user, credits, isLoading } = useAuth();
+  const navigate = useNavigate();
+
   // Settings
   const [settings, setSettings] = usePersistedState<Settings>(
     {
@@ -80,7 +91,7 @@ function App() {
     "setting"
   );
 
-  const wsRef = useRef<WebSocket>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   // Code generation model from local storage or the default value
   const model =
@@ -99,6 +110,14 @@ function App() {
 
   // Indicate coding state using the browser tab's favicon and title
   useBrowserTabIndicator(appState === AppState.CODING);
+
+  // Check authentication on mount and redirect if not authenticated
+  useEffect(() => {
+    if (!isLoading && !user) {
+      // User is not authenticated, redirect to login
+      navigate('/login');
+    }
+  }, [user, isLoading, navigate]);
 
   // When the user already has the settings in local storage, newly added keys
   // do not get added to the settings so if it's falsy, we populate it with the default
@@ -155,7 +174,9 @@ function App() {
 
   // Used when the user cancels the code generation
   const cancelCodeGeneration = () => {
-    wsRef.current?.close?.(USER_CLOSE_WEB_SOCKET_CODE);
+    if (wsRef.current) {
+      wsRef.current.close(USER_CLOSE_WEB_SOCKET_CODE);
+    }
   };
 
   // Used for code generation failure as well
@@ -180,14 +201,33 @@ function App() {
   };
 
   function doGenerateCode(params: CodeGenerationParams) {
+    // CRITICAL: Always check authentication and credits regardless of environment
+    if (!user) {
+      toast.error("Please sign in to generate code");
+      navigate('/login');
+      return;
+    }
+
+    // Check if user has credits
+    const creditsRemaining = credits?.credits_remaining ?? 0;
+    if (creditsRemaining <= 0) {
+      toast.error("You've run out of credits. Please purchase more to continue.");
+      navigate('/account');
+      return;
+    }
+    
     // Reset the execution console
     resetExecutionConsoles();
 
     // Set the app state to coding during generation
     setAppState(AppState.CODING);
 
-    // Merge settings with params
-    const updatedParams = { ...params, ...settings };
+    // Merge settings with params and add userId
+    const updatedParams = { 
+      ...params, 
+      ...settings,
+      userId: user.id, // User is guaranteed to exist here
+    };
 
     // Create variants dynamically - start with 4 to handle most cases
     // Backend will use however many it needs (typically 3)
@@ -248,6 +288,13 @@ function App() {
 
   // Initial version creation
   function doCreate(referenceImages: string[], inputMode: "image" | "video") {
+    // Check authentication before creating
+    if (!user) {
+      toast.error("Please sign in to generate code");
+      navigate('/login');
+      return;
+    }
+
     // Reset any existing state
     reset();
 
@@ -283,6 +330,13 @@ function App() {
     updateInstruction: string,
     selectedElement?: HTMLElement
   ) {
+    // Check authentication before updating
+    if (!user) {
+      toast.error("Please sign in to make updates");
+      navigate('/login');
+      return;
+    }
+
     if (updateInstruction.trim() === "") {
       toast.error("Please include some instructions for AI on what to update.");
       return;
@@ -350,6 +404,13 @@ function App() {
   }
 
   function importFromCode(code: string, stack: Stack) {
+    // Check authentication before importing
+    if (!user) {
+      toast.error("Please sign in to import code");
+      navigate('/login');
+      return;
+    }
+
     // Reset any existing state
     reset();
 
@@ -373,6 +434,20 @@ function App() {
     setAppState(AppState.CODE_READY);
   }
 
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  // If not authenticated, don't render the app (useEffect will redirect)
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className="mt-2 dark:bg-black dark:text-white">
       {IS_RUNNING_ON_CLOUD && <PicoBadge />}
@@ -386,8 +461,36 @@ function App() {
         <div className="flex grow flex-col gap-y-2 overflow-y-auto border-r border-gray-200 bg-white px-6 dark:bg-zinc-950 dark:text-white">
           {/* Header with access to settings */}
           <div className="flex items-center justify-between mt-10 mb-2">
-            <h1 className="text-2xl ">Screenshot to Code</h1>
-            <SettingsDialog settings={settings} setSettings={setSettings} />
+            <h1 className="text-2xl ">Pix 2 Code</h1>
+            <div className="flex items-center space-x-4">
+              {/* Add user credits display */}
+              <UserCreditsDisplay />
+              
+              {/* Settings dialog */}
+              <SettingsDialog settings={settings} setSettings={setSettings} />
+              
+              {/* Account button */}
+              <button
+                onClick={() => navigate('/account')}
+                className="p-2 border rounded hover:bg-gray-100 dark:hover:bg-zinc-800"
+                title="Account"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </button>
+            </div>
           </div>
 
           {/* Generation settings like stack and model */}
@@ -398,6 +501,35 @@ function App() {
 
           {/* Show tip link until coding is complete */}
           {/* {appState !== AppState.CODE_READY && <TipLink />} */}
+
+          {/* Credits warning */}
+          {(credits?.credits_remaining ?? 0) <= 5 && (credits?.credits_remaining ?? 0) > 0 && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-md">
+              <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                You have {credits?.credits_remaining} credits remaining.
+              </p>
+              <button 
+                onClick={() => navigate('/account')}
+                className="mt-2 text-sm text-yellow-800 dark:text-yellow-200 underline hover:no-underline"
+              >
+                Get more credits
+              </button>
+            </div>
+          )}
+          
+          {(credits?.credits_remaining ?? 0) <= 0 && (
+            <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-md">
+              <p className="text-sm text-red-700 dark:text-red-300">
+                You've run out of credits. Visit your account page to purchase more.
+              </p>
+              <button 
+                onClick={() => navigate('/account')}
+                className="mt-2 inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                Buy Credits
+              </button>
+            </div>
+          )}
 
           {IS_RUNNING_ON_CLOUD && !settings.openAiApiKey && <OnboardingNote />}
 
@@ -424,7 +556,9 @@ function App() {
             doCreate={doCreate}
             importFromCode={importFromCode}
             settings={settings}
-          />
+          >
+            <WebpageToVideoInput />
+          </StartPane>
         )}
 
         {(appState === AppState.CODING || appState === AppState.CODE_READY) && (

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { AppState } from "../types";
+import { AppState } from "../types/types";
 
 // Store for app-wide state
 interface AppStore {
