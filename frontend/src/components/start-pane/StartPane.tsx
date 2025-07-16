@@ -3,11 +3,19 @@ import React, { useState, useCallback, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Settings } from "../../types/types";
 import { Stack } from "../../lib/stacks";
-import { URLS } from "../../urls";
-import ScreenRecorder from "../recording/ScreenRecorder";
 import { ScreenRecorderState } from "../../types/types";
 import { useAuth } from "../auth/AuthContext";
 import { IS_RUNNING_ON_CLOUD } from "../../config";
+import { 
+  UploadTool, 
+  UrlScreenshotTool, 
+  ScreenRecordTool, 
+  ImportCodeTool,
+  UrlToVideoTool,
+  ImagesToVideoTool,
+  VideoToSceneGraphTool
+} from "../tools";
+import { FeatureType, CREDIT_USAGE, getCreditCost } from "../../config/credit-usage";
 
 interface StartPaneProps {
   doCreate: (referenceImages: string[], inputMode: "image" | "video") => void;
@@ -18,11 +26,8 @@ interface StartPaneProps {
 
 const StartPane: React.FC<StartPaneProps> = ({ doCreate, importFromCode, settings, children }) => {
   const [dragActive, setDragActive] = useState(false);
-  const [urlInputValue, setUrlInputValue] = useState("");
-  const [codeInputValue, setCodeInputValue] = useState("");
-  const [selectedStack, setSelectedStack] = useState<Stack>(settings.generatedCodeConfig);
-  const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
   const [screenRecorderState, setScreenRecorderState] = useState<ScreenRecorderState>(ScreenRecorderState.INITIAL);
+  const [selectedTab, setSelectedTab] = useState<"start" | "tools" | "experimental" | "examples">("start");
   
   // Get authentication state
   const { user, isLoading, credits } = useAuth();
@@ -90,54 +95,68 @@ const StartPane: React.FC<StartPaneProps> = ({ doCreate, importFromCode, setting
     }
   }, [doCreate, user, navigate]);
 
-  const handleUrlCapture = useCallback(() => {
+  const handleUrlCapture = useCallback(async (url: string) => {
     // Check authentication before processing
     if (!user && IS_RUNNING_ON_CLOUD) {
       navigate('/signup');
       return;
     }
     
-    if (urlInputValue.trim()) {
-      fetch(`/api/screenshot?url=${encodeURIComponent(urlInputValue)}`)
-        .then(response => response.json())
-        .then(data => {
-          if (data.imageUrl) {
-            doCreate([data.imageUrl], "image");
-          }
-        })
-        .catch(error => {
-          console.error("Error capturing URL:", error);
-        });
-    }
-  }, [urlInputValue, doCreate, user, navigate]);
+    doCreate([url], "image");
+  }, [doCreate, user, navigate]);
 
-  const handleCodeImport = useCallback(() => {
+  const handleCodeImport = useCallback((code: string, stack: Stack) => {
     // Check authentication before processing
     if (!user && IS_RUNNING_ON_CLOUD) {
       navigate('/signup');
       return;
     }
     
-    if (codeInputValue.trim()) {
-      importFromCode(codeInputValue, selectedStack);
-      setIsCodeModalOpen(false);
-    }
-  }, [codeInputValue, selectedStack, importFromCode, user, navigate]);
+    importFromCode(code, stack);
+  }, [importFromCode, user, navigate]);
 
-  const handleGetStartedClick = useCallback(() => {
+  const handleFileSelect = useCallback((dataUrl: string, isVideo: boolean) => {
+    // Check authentication before processing
     if (!user && IS_RUNNING_ON_CLOUD) {
       navigate('/signup');
-    } else {
-      // Scroll to upload section
-      document.getElementById('upload-section')?.scrollIntoView({ behavior: 'smooth' });
+      return;
     }
+    
+    doCreate([dataUrl], isVideo ? "video" : "image");
+  }, [doCreate, user, navigate]);
+
+  // Experimental feature handlers
+  const handleUrlToVideo = useCallback((url: string) => {
+    // Check authentication before processing
+    if (!user && IS_RUNNING_ON_CLOUD) {
+      navigate('/signup');
+      return;
+    }
+    
+    console.log('Generate video from URL:', url);
+    // TODO: Implement URL to video functionality
   }, [user, navigate]);
 
-  const handleFeatureClick = useCallback((e: React.MouseEvent) => {
+  const handleImagesToVideo = useCallback((images: string[]) => {
+    // Check authentication before processing
     if (!user && IS_RUNNING_ON_CLOUD) {
-      e.preventDefault();
       navigate('/signup');
+      return;
     }
+    
+    console.log('Create video from images:', images.length);
+    // TODO: Implement images to video functionality
+  }, [user, navigate]);
+
+  const handleVideoToSceneGraph = useCallback((videoData: string) => {
+    // Check authentication before processing
+    if (!user && IS_RUNNING_ON_CLOUD) {
+      navigate('/signup');
+      return;
+    }
+    
+    console.log('Generate scene graph from video');
+    // TODO: Implement video to scene graph functionality
   }, [user, navigate]);
 
   // Show loading state
@@ -154,361 +173,588 @@ const StartPane: React.FC<StartPaneProps> = ({ doCreate, importFromCode, setting
     return null; // Will redirect in useEffect
   }
 
+  // Example use cases
+  const useCases = [
+    {
+      title: "Landing Pages",
+      description: "Convert mockups to responsive landing pages",
+      icon: "🎨",
+      color: "blue"
+    },
+    {
+      title: "Dashboard UIs",
+      description: "Transform complex dashboard designs to code",
+      icon: "📊",
+      color: "purple"
+    },
+    {
+      title: "E-commerce",
+      description: "Build product pages from screenshots",
+      icon: "🛒",
+      color: "green"
+    },
+    {
+      title: "Clone Apps",
+      description: "Recreate existing app interfaces",
+      icon: "📱",
+      color: "orange"
+    }
+  ];
+
+
   // Main component content
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      {/* Hero Section */}
-      <div className="text-center mb-16">
-        <h1 className="text-4xl font-bold text-gray-900 dark:text-white sm:text-5xl md:text-6xl">
-          Turn Designs Into Code <span className="text-blue-600">Instantly</span>
-        </h1>
-        <p className="mt-6 max-w-2xl mx-auto text-xl text-gray-500 dark:text-gray-300">
-          Pix 2 Code uses AI to transform screenshots, mockups, and designs into 
-          production-ready HTML, CSS, and more. Save hours of coding time.
-        </p>
-        <div className="mt-8 flex justify-center space-x-4">
-          {IS_RUNNING_ON_CLOUD ? (
-            user ? (
-              <>
-                <a 
-                  href="#upload-section" 
-                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Get Started ({credits?.credits_remaining || 0} credits)
-                </a>
-                <a 
-                  href="https://github.com/abi/screenshot-to-code" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center px-6 py-3 border border-gray-300 text-base font-medium rounded-md shadow-sm text-gray-700 dark:text-gray-100 bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  View on GitHub
-                </a>
-              </>
-            ) : (
-              <>
-                <Link 
-                  to="/signup" 
-                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Sign Up Free
-                </Link>
-                <Link 
-                  to="/login" 
-                  className="inline-flex items-center px-6 py-3 border border-gray-300 text-base font-medium rounded-md shadow-sm text-gray-700 dark:text-gray-100 bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Sign In
-                </Link>
-              </>
-            )
-          ) : (
-            // Local development mode - no auth required
-            <a 
-              href="#upload-section" 
-              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              Get Started
-            </a>
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-6xl mx-auto px-6 py-8">
+        {/* Header Section */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mb-6 shadow-lg">
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+            Turn Designs Into Code, Instantly
+          </h1>
+          <p className="text-xl text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+            Upload any design and get production-ready code in React, Vue, HTML, and more. 
+            Perfect for developers and designers who want to ship faster.
+          </p>
+          {IS_RUNNING_ON_CLOUD && user && credits && (
+            <div className="mt-6 inline-flex items-center px-4 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-full text-sm font-medium">
+              <span className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></span>
+              {credits.credits_remaining} credits available
+            </div>
           )}
         </div>
-        {!user && IS_RUNNING_ON_CLOUD && (
-          <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-            Get 2 free credits when you sign up. No credit card required.
-          </p>
-        )}
-      </div>
 
-      {/* Features Section */}
-      <div className="py-12">
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
-          <div className="bg-white dark:bg-zinc-800 p-6 rounded-lg shadow-md">
-            <div className="h-12 w-12 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded-md flex items-center justify-center mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-semibold mb-2">Screenshot to Code</h3>
-            <p className="text-gray-600 dark:text-gray-300">Upload any screenshot or image of a UI design and convert it to clean, production-ready code.</p>
-          </div>
-          <div className="bg-white dark:bg-zinc-800 p-6 rounded-lg shadow-md">
-            <div className="h-12 w-12 bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-300 rounded-md flex items-center justify-center mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-semibold mb-2">Multiple Frameworks</h3>
-            <p className="text-gray-600 dark:text-gray-300">Generate code in HTML/Tailwind CSS, HTML/CSS, React, Vue, and more with a single click.</p>
-          </div>
-          <div className="bg-white dark:bg-zinc-800 p-6 rounded-lg shadow-md">
-            <div className="h-12 w-12 bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-300 rounded-md flex items-center justify-center mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-semibold mb-2">AI-Powered Edits</h3>
-            <p className="text-gray-600 dark:text-gray-300">Make changes to your generated code using natural language instructions. No manual coding required.</p>
+        {/* Navigation Tabs */}
+        <div className="flex justify-center mb-8">
+          <div className="inline-flex bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+            <button
+              onClick={() => setSelectedTab("start")}
+              className={`px-6 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                selectedTab === "start"
+                  ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                  : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              }`}
+            >
+              Quick Start
+            </button>
+            <button
+              onClick={() => setSelectedTab("tools")}
+              className={`px-6 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                selectedTab === "tools"
+                  ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                  : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              }`}
+            >
+              All Tools
+            </button>
+            <button
+              onClick={() => setSelectedTab("experimental")}
+              className={`px-6 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                selectedTab === "experimental"
+                  ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                  : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              }`}
+            >
+              <span className="flex items-center">
+                Advanced
+                <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                  Beta
+                </span>
+              </span>
+            </button>
+            <button
+              onClick={() => setSelectedTab("examples")}
+              className={`px-6 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                selectedTab === "examples"
+                  ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm"
+                  : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+              }`}
+            >
+              Use Cases
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* Upload Section */}
-      {(user || !IS_RUNNING_ON_CLOUD) && (
-        <div id="upload-section" className="py-12">
-          <div className="max-w-xl mx-auto">
-            <h2 className="text-3xl font-bold text-center mb-8">Get Started</h2>
-            
-            {screenRecorderState === ScreenRecorderState.INITIAL && (
-              <>
-                {/* Drag and Drop Area */}
+        {/* Quick Start Tab */}
+        {selectedTab === "start" && (
+          <div className="space-y-8">
+            {/* Main Upload Area */}
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-2xl p-1">
+              <div className="bg-white dark:bg-gray-800 rounded-xl">
                 <div 
-                  className={`border-2 border-dashed rounded-lg p-12 text-center ${
-                    dragActive ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-300 dark:border-gray-700"
+                  className={`p-12 text-center transition-all duration-200 ${
+                    dragActive ? "bg-blue-50 dark:bg-blue-900/20 scale-[0.99]" : ""
                   }`}
                   onDragEnter={handleDrag}
                   onDragOver={handleDrag}
                   onDragLeave={handleDrag}
                   onDrop={handleDrop}
                 >
-                  <div className="space-y-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 mx-auto text-gray-400 dark:text-gray-500">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                    </svg>
-                    <h3 className="text-lg font-medium">Drag & drop a screenshot here</h3>
-                    <p className="text-gray-500 dark:text-gray-400">or click to upload</p>
-                    <input 
-                      type="file" 
-                      accept="image/*,video/mp4,video/quicktime,video/webm" 
-                      className="hidden" 
-                      id="file-upload" 
-                      onChange={handleFileInput} 
-                    />
-                    <button 
-                      onClick={() => document.getElementById('file-upload')?.click()}
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-                    >
-                      Upload File
-                    </button>
-                    {IS_RUNNING_ON_CLOUD && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                        You have {credits?.credits_remaining || 0} credits remaining
+                  <div className="space-y-6">
+                    <div className="flex justify-center">
+                      <div className="w-24 h-24 bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-800 dark:to-indigo-800 rounded-full flex items-center justify-center">
+                        <svg className="w-12 h-12 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">
+                        Drop your design here
+                      </h3>
+                      <p className="text-gray-600 dark:text-gray-400 mb-8">
+                        or click to browse • Supports images, screenshots, and videos
                       </p>
-                    )}
+                      <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                        <input 
+                          type="file" 
+                          accept="image/*,video/mp4,video/quicktime,video/webm" 
+                          className="hidden" 
+                          id="file-upload" 
+                          onChange={handleFileInput} 
+                        />
+                        <button 
+                          onClick={() => document.getElementById('file-upload')?.click()}
+                          className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-xl text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 shadow-md hover:shadow-lg"
+                        >
+                          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                          </svg>
+                          Choose File
+                        </button>
+                        <button 
+                          onClick={() => setSelectedTab("tools")}
+                          className="inline-flex items-center px-8 py-3 border border-gray-300 dark:border-gray-600 text-base font-medium rounded-xl text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200"
+                        >
+                          More Options
+                          <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                {/* Screen Recording Info */}
-                <div className="text-center text-sm text-slate-800 dark:text-slate-300 mt-4">
-                  Upload a screen recording (.mp4, .mov) or record your screen to clone
-                  a whole app (experimental).{" "}
-                  <a
-                    className="underline"
-                    href={URLS["intro-to-video"]}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Learn more.
-                  </a>
-                </div>
-              </>
-            )}
-
-            {/* Screen Recorder Component */}
-            <ScreenRecorder
-              screenRecorderState={screenRecorderState}
-              setScreenRecorderState={setScreenRecorderState}
-              generateCode={(images, mode) => doCreate(images, mode)}
-            />
-
-            {/* URL Input */}
-            <div className="mt-8">
-              <p className="text-center text-gray-500 dark:text-gray-400 mb-4">Or screenshot a URL</p>
-              <div className="flex">
-                <input 
-                  type="text" 
-                  value={urlInputValue}
-                  onChange={(e) => setUrlInputValue(e.target.value)}
-                  placeholder="Enter URL"
-                  className="flex-1 min-w-0 block rounded-l-md border-gray-300 dark:border-gray-700 dark:bg-zinc-800 dark:text-white px-4 py-2"
-                />
-                <button 
-                  onClick={handleUrlCapture}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-r-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-                >
-                  Capture
-                </button>
               </div>
             </div>
 
-            {children}
-
-            {/* Import from Code */}
-            <div className="mt-8 text-center">
-              <button 
-                onClick={() => setIsCodeModalOpen(true)}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-base font-medium rounded-md shadow-sm text-gray-700 dark:text-gray-100 bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700"
-              >
-                Import from Code
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Sign up CTA for non-authenticated users */}
-      {!user && IS_RUNNING_ON_CLOUD && (
-        <div className="py-12 text-center">
-          <div className="max-w-xl mx-auto bg-blue-50 dark:bg-blue-900/20 rounded-lg p-8">
-            <h2 className="text-2xl font-bold mb-4">Ready to Start?</h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">
-              Sign up now to get 2 free credits and start converting your designs to code instantly.
-            </p>
-            <Link 
-              to="/signup" 
-              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-            >
-              Create Free Account
-            </Link>
-            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-              Already have an account? <Link to="/login" className="text-blue-600 hover:text-blue-500">Sign in</Link>
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Code Import Modal */}
-      {isCodeModalOpen && (user || !IS_RUNNING_ON_CLOUD) && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen px-4">
-            <div className="fixed inset-0 bg-gray-500 dark:bg-gray-900 bg-opacity-75 dark:bg-opacity-75 transition-opacity" 
-                 onClick={() => setIsCodeModalOpen(false)}></div>
-            <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl transform transition-all w-full max-w-2xl">
-              <div className="p-6">
-                <h3 className="text-xl font-medium text-gray-900 dark:text-white mb-4">Import from Code</h3>
-                <div className="space-y-4">
+            {/* Quick Links */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow duration-200">
+                <div className="flex items-start space-x-4">
+                  <div className="flex-shrink-0">
+                    <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-xl flex items-center justify-center">
+                      <span className="text-2xl">🚀</span>
+                    </div>
+                  </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Framework</label>
-                    <select 
-                      value={selectedStack}
-                      onChange={(e) => setSelectedStack(e.target.value as Stack)}
-                      className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-700 dark:bg-zinc-700 dark:text-white rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-1">First time?</h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                      Try uploading a screenshot of any website or app
+                    </p>
+                    <a href="#" className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium">
+                      View tutorial →
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow duration-200">
+                <div className="flex items-start space-x-4">
+                  <div className="flex-shrink-0">
+                    <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-xl flex items-center justify-center">
+                      <span className="text-2xl">✨</span>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-1">Pro tip</h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                      Use videos to capture hover states and animations
+                    </p>
+                    <button 
+                      onClick={() => setSelectedTab("tools")}
+                      className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
                     >
-                      <option value={Stack.HTML_TAILWIND}>HTML + Tailwind</option>
-                      <option value={Stack.HTML_CSS}>HTML + CSS</option>
-                      <option value={Stack.REACT_TAILWIND}>React + Tailwind</option>
-                      <option value={Stack.VUE_TAILWIND}>Vue + Tailwind</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Paste your code</label>
-                    <textarea 
-                      value={codeInputValue}
-                      onChange={(e) => setCodeInputValue(e.target.value)}
-                      rows={10}
-                      className="mt-1 block w-full border-gray-300 dark:border-gray-700 dark:bg-zinc-700 dark:text-white rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                    ></textarea>
+                      Try screen recording →
+                    </button>
                   </div>
                 </div>
-                <div className="mt-6 flex justify-end space-x-3">
-                  <button 
-                    onClick={() => setIsCodeModalOpen(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md shadow-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={handleCodeImport}
-                    className="px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-                  >
-                    Import
-                  </button>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-shadow duration-200">
+                <div className="flex items-start space-x-4">
+                  <div className="flex-shrink-0">
+                    <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-xl flex items-center justify-center">
+                      <span className="text-2xl">💡</span>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-1">Need help?</h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                      Check out common use cases and examples
+                    </p>
+                    <button 
+                      onClick={() => setSelectedTab("examples")}
+                      className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                    >
+                      Browse examples →
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-900/20 dark:to-amber-900/20 rounded-xl border border-yellow-200 dark:border-yellow-800 p-6 hover:shadow-lg transition-shadow duration-200">
+                <div className="flex items-start space-x-4">
+                  <div className="flex-shrink-0">
+                    <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-xl flex items-center justify-center">
+                      <span className="text-2xl">⚡</span>
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-1">
+                      Advanced Features
+                      <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                        Beta
+                      </span>
+                    </h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                      Explore cutting-edge video creation and analysis tools
+                    </p>
+                    <button 
+                      onClick={() => setSelectedTab("experimental")}
+                      className="text-sm text-yellow-600 dark:text-yellow-400 hover:underline font-medium"
+                    >
+                      Try advanced features →
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Examples Section */}
-      <div className="py-12 bg-gray-50 dark:bg-zinc-900 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 mt-12 rounded-lg">
-        <h2 className="text-3xl font-bold text-center mb-12">What You Can Create</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {/* Example Cards */}
-          <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-md overflow-hidden">
-            <div className="h-48 bg-gray-200 dark:bg-gray-700"></div>
-            <div className="p-4">
-              <h3 className="font-medium">Landing Pages</h3>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Convert landing page designs to responsive code in seconds</p>
+        {/* All Tools Tab */}
+        {selectedTab === "tools" && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-all duration-200">
+                <div className="p-6">
+                  <UploadTool 
+                    onFileSelect={handleFileSelect}
+                    dragActive={dragActive}
+                    onDragEnter={handleDrag}
+                    onDragOver={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDrop={handleDrop}
+                  />
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-all duration-200">
+                <div className="p-6">
+                  <UrlScreenshotTool 
+                    onCapture={handleUrlCapture}
+                    apiKey={settings.screenshotOneApiKey}
+                  />
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-all duration-200">
+                <div className="p-6">
+                  <ScreenRecordTool 
+                    screenRecorderState={screenRecorderState}
+                    setScreenRecorderState={setScreenRecorderState}
+                    generateCode={(images, mode) => doCreate(images, mode)}
+                  />
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-all duration-200">
+                <div className="p-6">
+                  <ImportCodeTool 
+                    onImport={handleCodeImport}
+                    defaultStack={settings.generatedCodeConfig}
+                  />
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* Experimental Features Tab */}
+        {selectedTab === "experimental" && (
+          <div className="space-y-8">
+            {/* Introduction */}
+            <div className="bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-900/10 dark:to-amber-900/10 rounded-xl p-6 border border-yellow-200 dark:border-yellow-800">
+              <div className="flex items-start space-x-4">
+                <div className="flex-shrink-0">
+                  <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-xl flex items-center justify-center">
+                    <svg className="w-6 h-6 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Advanced Features</h3>
+                  <p className="text-gray-700 dark:text-gray-300 mb-4">
+                    Cutting-edge tools that push the boundaries of AI-powered development. These features are experimental and may have limited availability.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                      Beta Version
+                    </span>
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                      AI-Powered
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Use Case Categories */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div className="flex items-center mb-3">
+                  <div className="w-8 h-8 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Video Creation</h4>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Transform static content into dynamic video presentations and walkthroughs.
+                </p>
+                <ul className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                  <li>• Website walkthrough videos</li>
+                  <li>• Image sequence animations</li>
+                  <li>• Product demo generation</li>
+                </ul>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div className="flex items-center mb-3">
+                  <div className="w-8 h-8 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-5 h-5 text-cyan-600 dark:text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Scene Analysis</h4>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Extract detailed structural information from video content for analysis and documentation.
+                </p>
+                <ul className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                  <li>• UI component mapping</li>
+                  <li>• Interaction flow analysis</li>
+                  <li>• State transition tracking</li>
+                </ul>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+                <div className="flex items-center mb-3">
+                  <div className="w-8 h-8 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center mr-3">
+                    <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4V2a1 1 0 011-1h4a1 1 0 011 1v2h4a1 1 0 011 1v4a1 1 0 01-1 1h-4v4a1 1 0 01-1 1H8a1 1 0 01-1-1v-4H3a1 1 0 01-1-1V5a1 1 0 011-1h4z" />
+                    </svg>
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Automated Workflows</h4>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Streamline complex processes with AI-powered automation and intelligent processing.
+                </p>
+                <ul className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                  <li>• Batch processing</li>
+                  <li>• Multi-step workflows</li>
+                  <li>• Smart content generation</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Experimental Tools */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <UrlToVideoTool 
+                onGenerate={handleUrlToVideo}
+                isGenerating={false}
+              />
+              
+              <ImagesToVideoTool 
+                onCreateVideo={handleImagesToVideo}
+                isProcessing={false}
+              />
+              
+              <VideoToSceneGraphTool 
+                onGenerateSceneGraph={handleVideoToSceneGraph}
+                isProcessing={false}
+              />
+            </div>
+
+            {/* Detailed Workflows */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8">
+              <h3 className="text-2xl font-semibold text-gray-900 dark:text-white mb-6">Common Advanced Workflows</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <div className="border-l-4 border-indigo-500 pl-4">
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                      📹 Create Product Demos
+                    </h4>
+                    <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                      <p><strong>Step 1:</strong> Enter your product's URL in "URL to Video"</p>
+                      <p><strong>Step 2:</strong> AI generates an automated walkthrough</p>
+                      <p><strong>Step 3:</strong> Use scene graph to analyze user flow</p>
+                      <p><strong>Result:</strong> Professional demo video + detailed analysis</p>
+                    </div>
+                  </div>
+
+                  <div className="border-l-4 border-cyan-500 pl-4">
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                      🎨 Design Process Documentation
+                    </h4>
+                    <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                      <p><strong>Step 1:</strong> Upload design iterations to "Images to Video"</p>
+                      <p><strong>Step 2:</strong> Create animated progression video</p>
+                      <p><strong>Step 3:</strong> Extract components with scene graph</p>
+                      <p><strong>Result:</strong> Animated design story + component library</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="border-l-4 border-purple-500 pl-4">
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                      🔍 Competitor Analysis
+                    </h4>
+                    <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                      <p><strong>Step 1:</strong> Generate videos from competitor URLs</p>
+                      <p><strong>Step 2:</strong> Analyze videos with scene graph tool</p>
+                      <p><strong>Step 3:</strong> Compare UI patterns and flows</p>
+                      <p><strong>Result:</strong> Detailed competitive insights</p>
+                    </div>
+                  </div>
+
+                  <div className="border-l-4 border-pink-500 pl-4">
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                      📱 App Flow Visualization
+                    </h4>
+                    <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                      <p><strong>Step 1:</strong> Upload app screenshots in sequence</p>
+                      <p><strong>Step 2:</strong> Create flow animation video</p>
+                      <p><strong>Step 3:</strong> Extract interaction patterns</p>
+                      <p><strong>Result:</strong> Visual user journey + interaction map</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Feature Limitations */}
+            <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-6 border border-amber-200 dark:border-amber-800">
+              <h4 className="text-lg font-semibold text-amber-900 dark:text-amber-100 mb-3">
+                ⚠️ Current Limitations & Roadmap
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h5 className="font-medium text-amber-800 dark:text-amber-200 mb-2">Known Limitations:</h5>
+                  <ul className="text-sm text-amber-700 dark:text-amber-300 space-y-1">
+                    <li>• Video generation may take 30-60 seconds</li>
+                    <li>• Scene graph analysis is in early beta</li>
+                    <li>• Some complex animations may not capture perfectly</li>
+                    <li>• Limited to specific video formats</li>
+                  </ul>
+                </div>
+                <div>
+                  <h5 className="font-medium text-amber-800 dark:text-amber-200 mb-2">Coming Soon:</h5>
+                  <ul className="text-sm text-amber-700 dark:text-amber-300 space-y-1">
+                    <li>• Real-time video processing</li>
+                    <li>• Advanced scene graph visualization</li>
+                    <li>• Batch processing capabilities</li>
+                    <li>• Integration with design tools</li>
+                  </ul>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-md overflow-hidden">
-            <div className="h-48 bg-gray-200 dark:bg-gray-700"></div>
-            <div className="p-4">
-              <h3 className="font-medium">Dashboard UI</h3>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Transform complex dashboard mockups into functional interfaces</p>
+        )}
+
+        {/* Use Cases Tab */}
+        {selectedTab === "examples" && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {useCases.map((useCase) => (
+                <div key={useCase.title} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:shadow-lg transition-all duration-200">
+                  <div className="flex items-start space-x-4">
+                    <div className="flex-shrink-0 text-4xl">{useCase.icon}</div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{useCase.title}</h3>
+                      <p className="text-gray-600 dark:text-gray-400">{useCase.description}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-8">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Popular Workflows</h3>
+              <div className="space-y-4">
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0 w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">1</div>
+                  <div>
+                    <h4 className="font-medium text-gray-900 dark:text-white">Design to Code</h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Upload a Figma screenshot → Get React/Vue/HTML code → Deploy</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0 w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">2</div>
+                  <div>
+                    <h4 className="font-medium text-gray-900 dark:text-white">Clone Existing Sites</h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Enter URL → Capture screenshot → Generate matching code</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0 w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-sm font-medium">3</div>
+                  <div>
+                    <h4 className="font-medium text-gray-900 dark:text-white">Interactive Prototypes</h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Record screen with interactions → AI understands behavior → Get functional code</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-md overflow-hidden">
-            <div className="h-48 bg-gray-200 dark:bg-gray-700"></div>
-            <div className="p-4">
-              <h3 className="font-medium">Mobile App Screens</h3>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Turn app designs into responsive mobile-first code</p>
+        )}
+
+        {/* Sign up CTA for non-authenticated users */}
+        {!user && IS_RUNNING_ON_CLOUD && (
+          <div className="mt-12 text-center">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-white">
+              <h2 className="text-3xl font-bold mb-3">Ready to Start Creating?</h2>
+              <p className="text-blue-100 mb-6 text-lg">
+                Sign up now to get 2 free credits and start converting your designs to code instantly.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Link 
+                  to="/signup" 
+                  className="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-xl text-blue-600 bg-white hover:bg-gray-100 transition-colors duration-200 shadow-md"
+                >
+                  Create Free Account
+                </Link>
+                <Link 
+                  to="/login" 
+                  className="inline-flex items-center justify-center px-8 py-3 border border-white/30 text-base font-medium rounded-xl text-white hover:bg-white/10 transition-colors duration-200"
+                >
+                  Sign In
+                </Link>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-      
-      {/* Learn More Links */}
-      <div className="py-12 text-center">
-        <h2 className="text-3xl font-bold text-center mb-8">Learn More</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Link 
-            to="/gallery" 
-            className="inline-flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-          >
-            View Gallery
-          </Link>
-          <Link 
-            to="/pricing" 
-            className="inline-flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-          >
-            See Pricing
-          </Link>
-          <Link 
-            to="/about" 
-            className="inline-flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-          >
-            About Us
-          </Link>
-        </div>
-        
-        {/* Additional Links */}
-        <div className="mt-8 flex justify-center flex-wrap gap-4">
-          <Link 
-            to="/contact" 
-            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-          >
-            Contact Us
-          </Link>
-          <Link 
-            to="/blog" 
-            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-          >
-            Blog
-          </Link>
-          <Link 
-            to="/terms-of-service" 
-            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-          >
-            Terms of Service
-          </Link>
-          <Link 
-            to="/privacy" 
-            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-          >
-            Privacy Policy
-          </Link>
-        </div>
+        )}
+
+
       </div>
     </div>
   );

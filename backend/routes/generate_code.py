@@ -68,6 +68,9 @@ from ws.constants import APP_ERROR_WEB_SOCKET_CODE  # type: ignore
 
 # Add Supabase client for credit system
 from supabase import create_client, Client
+
+# Import credit usage configuration
+from config.credit_usage import FeatureType, get_credit_cost, calculate_dynamic_cost
 import os
 from datetime import datetime
 import stripe
@@ -80,9 +83,9 @@ supabase: Client = create_client(supabase_url, supabase_key) if supabase_url and
 router = APIRouter()
 
 # Add a function to check and use credits
-def check_and_use_credit(user_id: str, model: str, stack: str, input_mode: str) -> tuple[bool, str, int]:
+def check_and_use_credit(user_id: str, model: str, stack: str, input_mode: str, feature_type: FeatureType = None, **kwargs) -> tuple[bool, str, int]:
     """
-    Check if the user has credits and use one if they do
+    Check if the user has credits and use the appropriate amount based on feature type
     Returns (success, message, remaining_credits)
     """
     if not supabase:
@@ -94,6 +97,15 @@ def check_and_use_credit(user_id: str, model: str, stack: str, input_mode: str) 
         return False, "User ID not provided", 0
     
     try:
+        # Determine feature type if not provided
+        if feature_type is None:
+            feature_type = _determine_feature_type(input_mode)
+        
+        # Calculate credit cost based on feature type and options
+        credit_cost = calculate_dynamic_cost(feature_type, **kwargs)
+        
+        print(f"Credit cost for {feature_type}: {credit_cost} credits")
+        
         # Get user credits - Note: Supabase Python client is synchronous
         credits_response = supabase.table("user_credits").select("*").eq("user_id", user_id).single().execute()
         
@@ -104,13 +116,13 @@ def check_and_use_credit(user_id: str, model: str, stack: str, input_mode: str) 
         
         credits = credits_response.data
         
-        # Check if user has credits
-        if credits["credits_remaining"] <= 0:
-            return False, "Insufficient credits", 0
+        # Check if user has sufficient credits
+        if credits["credits_remaining"] < credit_cost:
+            return False, f"Insufficient credits. Need {credit_cost} credits, have {credits['credits_remaining']}", credits["credits_remaining"]
         
         # Update credits
-        new_remaining = credits["credits_remaining"] - 1
-        new_used = credits["credits_used"] + 1
+        new_remaining = credits["credits_remaining"] - credit_cost
+        new_used = credits["credits_used"] + credit_cost
         
         update_response = supabase.table("user_credits").update({
             "credits_remaining": new_remaining,
@@ -122,13 +134,15 @@ def check_and_use_credit(user_id: str, model: str, stack: str, input_mode: str) 
             print(f"Error updating credits")
             return False, "Failed to update credits", credits["credits_remaining"]
         
-        # Log the conversion
+        # Log the conversion with feature type
         try:
             log_response = supabase.table("conversion_history").insert({
                 "user_id": user_id,
                 "model_used": model,
                 "framework": stack,
                 "input_type": input_mode,
+                "feature_type": feature_type.value,
+                "credits_used": credit_cost,
                 "created_at": datetime.now().isoformat()
             }).execute()
             
@@ -138,11 +152,23 @@ def check_and_use_credit(user_id: str, model: str, stack: str, input_mode: str) 
         except Exception as e:
             print(f"Error logging conversion: {str(e)}")
         
-        return True, "Credit used successfully", new_remaining
+        return True, f"Used {credit_cost} credit{'s' if credit_cost > 1 else ''} successfully", new_remaining
     
     except Exception as e:
         print(f"Error checking credits: {str(e)}")
         return False, f"Error checking credits: {str(e)}", 0
+
+def _determine_feature_type(input_mode: str) -> FeatureType:
+    """Determine feature type based on input mode"""
+    if input_mode == "image":
+        return FeatureType.CODE_GENERATION_IMAGE
+    elif input_mode == "video":
+        return FeatureType.CODE_GENERATION_VIDEO
+    elif input_mode == "text":
+        return FeatureType.CODE_GENERATION_TEXT
+    else:
+        # Default to image mode
+        return FeatureType.CODE_GENERATION_IMAGE
 
 class VariantErrorAlreadySent(Exception):
     """Exception that indicates a variantError message has already been sent to frontend"""

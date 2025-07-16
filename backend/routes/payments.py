@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import json
 from datetime import datetime, timedelta
+from ..services.pricing_service import PricingService
 
 # Initialize Supabase client
 supabase_url = os.environ.get("SUPABASE_URL")
@@ -20,44 +21,14 @@ if stripe_key:
     stripe.api_key = stripe_key
 endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
 
+# Initialize pricing service
+pricing_service = PricingService(supabase) if supabase else None
+
 router = APIRouter()
 
 class CheckoutSessionRequest(BaseModel):
     userId: str
     planId: str
-
-# Updated plan credit allocations and prices
-# $0.15 per credit pricing
-PLANS = {
-    "starter": {
-        "credits": 10, 
-        "price_id": os.environ.get("STRIPE_STARTER_PRICE_ID"), 
-        "amount": 150,  # $1.50 in cents
-        "name": "Starter Package",
-        "description": "10 code generations"
-    },
-    "basic": {
-        "credits": 50, 
-        "price_id": os.environ.get("STRIPE_BASIC_PRICE_ID"), 
-        "amount": 750,  # $7.50 in cents
-        "name": "Basic Package",
-        "description": "50 code generations"
-    },
-    "professional": {
-        "credits": 200, 
-        "price_id": os.environ.get("STRIPE_PROFESSIONAL_PRICE_ID"), 
-        "amount": 3000,  # $30.00 in cents
-        "name": "Professional Package",
-        "description": "200 code generations"
-    },
-    "enterprise": {
-        "credits": 1000, 
-        "price_id": os.environ.get("STRIPE_ENTERPRISE_PRICE_ID"), 
-        "amount": 15000,  # $150.00 in cents
-        "name": "Enterprise Package",
-        "description": "1000 code generations"
-    }
-}
 
 @router.post("/create-checkout-session")
 async def create_checkout_session(request: CheckoutSessionRequest):

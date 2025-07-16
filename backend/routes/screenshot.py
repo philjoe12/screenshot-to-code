@@ -1,9 +1,20 @@
 #/root/screenshot-to-code/backend/routes/screenshot.py
 import base64
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 import httpx
 from urllib.parse import urlparse
+import os
+from supabase import create_client, Client
+from config.credit_usage import FeatureType, get_credit_cost
+
+# Supabase client
+supabase_url = os.environ.get("SUPABASE_URL")
+supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
+supabase: Client = create_client(supabase_url, supabase_key) if supabase_url and supabase_key else None
+
+# Import credit checking function
+from routes.generate_code import check_and_use_credit
 
 router = APIRouter()
 
@@ -77,10 +88,13 @@ async def capture_screenshot(
 class ScreenshotRequest(BaseModel):
     url: str
     apiKey: str
+    userId: str  # Add user ID for credit tracking
 
 
 class ScreenshotResponse(BaseModel):
     url: str
+    creditsUsed: int
+    creditsRemaining: int
 
 
 @router.post("/api/screenshot")
@@ -88,8 +102,24 @@ async def app_screenshot(request: ScreenshotRequest):
     # Extract the URL from the request body
     url = request.url
     api_key = request.apiKey
+    user_id = request.userId
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID required")
 
     try:
+        # Check and use credits for screenshot feature
+        credit_success, credit_message, remaining_credits = check_and_use_credit(
+            user_id=user_id,
+            model="ScreenshotOne-API",
+            stack="screenshot",
+            input_mode="url",
+            feature_type=FeatureType.URL_SCREENSHOT
+        )
+
+        if not credit_success:
+            raise HTTPException(status_code=402, detail=f"Credit check failed: {credit_message}")
+
         # Normalize the URL
         normalized_url = normalize_url(url)
         
@@ -99,7 +129,15 @@ async def app_screenshot(request: ScreenshotRequest):
         # Convert the image bytes to a data url
         data_url = bytes_to_data_url(image_bytes, "image/png")
 
-        return ScreenshotResponse(url=data_url)
+        credit_cost = get_credit_cost(FeatureType.URL_SCREENSHOT)
+        
+        return ScreenshotResponse(
+            url=data_url,
+            creditsUsed=credit_cost,
+            creditsRemaining=remaining_credits
+        )
+    except HTTPException:
+        raise
     except ValueError as e:
         # Handle URL normalization errors
         raise HTTPException(status_code=500, detail=str(e))
